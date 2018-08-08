@@ -118,7 +118,6 @@
                     "attachmentName": "jarfile",
                     "attachmentType": "application/java-archive"
                 },
-                "sentinelledLogs": false,
                 "requireMain": true
             }
         ],
@@ -140,6 +139,18 @@
                 "image": {
                     "prefix": "openwhisk",
                     "name": "action-php-v7.2",
+                    "tag": "latest"
+                }
+            }
+        ],
+        "ruby": [
+            {
+                "kind": "ruby:2.5",
+                "default": true,
+                "deprecated": false,
+                "image": {
+                    "prefix": "openwhisk",
+                    "name": "action-ruby-v2.5",
                     "tag": "latest"
                 }
             }

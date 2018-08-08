@@ -28,14 +28,13 @@ import scala.concurrent.duration._
 import scala.language.postfixOps
 import scala.util.Failure
 import scala.util.Success
-
 import akka.actor.ActorSystem
-
 import spray.json._
-
 import whisk.common.Logging
 import whisk.common.TransactionId
 import whisk.core.controller.WhiskServices
+import whisk.core.database.ActivationStore
+import whisk.core.database.NoDocumentException
 import whisk.core.entity._
 import whisk.core.entity.size.SizeInt
 import whisk.core.entity.types._
@@ -261,14 +260,21 @@ protected[actions] trait SequenceActions {
       .foldLeft(initialAccounting) { (accountingFuture, futureAction) =>
         accountingFuture.flatMap { accounting =>
           if (accounting.atomicActionCnt < actionSequenceLimit) {
-            invokeNextAction(user, futureAction, accounting, cause).flatMap { accounting =>
-              if (!accounting.shortcircuit) {
-                Future.successful(accounting)
-              } else {
-                // this is to short circuit the fold
-                Future.failed(FailedSequenceActivation(accounting)) // terminates the fold
+            invokeNextAction(user, futureAction, accounting, cause)
+              .flatMap { accounting =>
+                if (!accounting.shortcircuit) {
+                  Future.successful(accounting)
+                } else {
+                  // this is to short circuit the fold
+                  Future.failed(FailedSequenceActivation(accounting)) // terminates the fold
+                }
               }
-            }
+              .recoverWith {
+                case _: NoDocumentException =>
+                  val updatedAccount =
+                    accounting.fail(ActivationResponse.applicationError(sequenceComponentNotFound), None)
+                  Future.failed(FailedSequenceActivation(updatedAccount)) // terminates the fold
+              }
           } else {
             val updatedAccount = accounting.fail(ActivationResponse.applicationError(sequenceIsTooLong), None)
             Future.failed(FailedSequenceActivation(updatedAccount)) // terminates the fold

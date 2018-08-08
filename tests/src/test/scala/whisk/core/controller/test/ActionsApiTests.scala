@@ -21,27 +21,23 @@ import java.time.Instant
 
 import scala.concurrent.duration.DurationInt
 import scala.language.postfixOps
-
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
-
 import akka.http.scaladsl.model.StatusCodes._
 import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport.sprayJsonMarshaller
 import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport.sprayJsonUnmarshaller
 import akka.http.scaladsl.server.Route
-
 import spray.json._
 import spray.json.DefaultJsonProtocol._
-
 import whisk.core.controller.WhiskActionsApi
 import whisk.core.entity._
 import whisk.core.entity.size._
 import whisk.core.entitlement.Collection
 import whisk.http.ErrorResponse
 import whisk.http.Messages
-
 import java.io.ByteArrayInputStream
 import java.util.Base64
+
 import akka.stream.scaladsl._
 
 /**
@@ -453,6 +449,19 @@ class ActionsApiTests extends ControllerTestCommon with WhiskActionsApi {
     }
   }
 
+  it should "reject exec with unknown or missing kind" in {
+    implicit val tid = transid()
+    Seq("", "foobar").foreach { kind =>
+      val content = s"""{"exec":{"kind": "$kind", "code":"??"}}""".stripMargin.parseJson.asJsObject
+      Put(s"$collectionPath/${aname()}", content) ~> Route.seal(routes(creds)) ~> check {
+        status should be(BadRequest)
+        responseAs[String] should include {
+          s"kind '$kind' not in Set"
+        }
+      }
+    }
+  }
+
   it should "reject update with exec which is too big" in {
     implicit val tid = transid()
     val oldCode = "function main()"
@@ -516,8 +525,9 @@ class ActionsApiTests extends ControllerTestCommon with WhiskActionsApi {
 
   it should "put should accept request with missing optional properties" in {
     implicit val tid = transid()
-    val action = WhiskAction(namespace, aname(), jsDefault("??"))
-    val content = WhiskActionPut(Some(action.exec))
+    val action = WhiskAction(namespace, aname(), jsDefault(""))
+    // only a kind must be defined (code otherwise could be empty)
+    val content = JsObject("exec" -> JsObject("code" -> "".toJson, "kind" -> action.exec.kind.toJson))
     Put(s"$collectionPath/${action.name}", content) ~> Route.seal(routes(creds)) ~> check {
       deleteAction(action.docid)
       status should be(OK)
@@ -1384,7 +1394,7 @@ class ActionsApiTests extends ControllerTestCommon with WhiskActionsApi {
 
     put(entityStore, action)
 
-    Put(s"$collectionPath/${action.name}?overwrite=true", JsObject()) ~> Route.seal(routes(creds)) ~> check {
+    Put(s"$collectionPath/${action.name}?overwrite=true", JsObject.empty) ~> Route.seal(routes(creds)) ~> check {
       status shouldBe BadRequest
       responseAs[ErrorResponse].error shouldBe Messages.runtimeDeprecated(action.exec)
     }

@@ -52,9 +52,11 @@ import whisk.core.controller.actions.PostActionActivation
 import whisk.core.database._
 import whisk.core.entity._
 import whisk.core.entity.types._
+import whisk.core.loadBalancer.LoadBalancerException
 import whisk.http.ErrorResponse.terminate
 import whisk.http.Messages
 import whisk.http.LenientSprayJsonSupport._
+import whisk.spi.SpiLoader
 import whisk.utils.JsHelpers._
 
 protected[controller] sealed class WebApiDirectives(prefix: String = "__ow_") {
@@ -360,6 +362,9 @@ trait WhiskWebActionsApi extends Directives with ValidateRequestSize with PostAc
   /** Store for identities. */
   protected val authStore: AuthStore
 
+  /** Configured authentication provider. */
+  protected val authenticationProvider = SpiLoader.get[AuthenticationDirectiveProvider]
+
   /** The prefix for web invokes e.g., /web. */
   private lazy val webRoutePrefix = {
     pathPrefix(webInvokePathSegments.map(_segmentStringToPathMatcher(_)).reduceLeft(_ / _))
@@ -457,7 +462,8 @@ trait WhiskWebActionsApi extends Directives with ValidateRequestSize with PostAc
    * This method is factored out to allow mock testing.
    */
   protected def getIdentity(namespace: EntityName)(implicit transid: TransactionId): Future[Identity] = {
-    Identity.get(authStore, namespace)
+
+    authenticationProvider.identityByNamespace(namespace)(transid, authStore)
   }
 
   private def handleMatch(namespaceSegment: String,
@@ -667,6 +673,10 @@ trait WhiskWebActionsApi extends Directives with ValidateRequestSize with PostAc
         terminate(Accepted, Messages.responseNotReady)
 
       case Failure(t: RejectRequest) => terminate(t.code, t.message)
+
+      case Failure(t: LoadBalancerException) =>
+        logging.error(this, s"failed in loadbalancer: $t")
+        terminate(ServiceUnavailable)
 
       case Failure(t) =>
         logging.error(this, s"exception in completeRequest: $t")

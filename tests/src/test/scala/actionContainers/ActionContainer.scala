@@ -21,6 +21,7 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.PrintWriter
 
+import scala.util.Try
 import scala.concurrent.Await
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
@@ -63,7 +64,7 @@ trait ActionProxyContainerTestUtils extends FlatSpec with Matchers with StreamLo
         "binary" -> JsBoolean(Exec.isBinaryCode(code))))
 
   def runPayload(args: JsValue, other: Option[JsObject] = None): JsObject =
-    JsObject(Map("value" -> args) ++ (other map { _.fields } getOrElse Map()))
+    JsObject(Map("value" -> args) ++ (other map { _.fields } getOrElse Map.empty))
 
   def checkStreams(out: String,
                    err: String,
@@ -90,7 +91,7 @@ object ActionContainer {
     }.get // This fails if the docker binary couldn't be located.
   }
 
-  private lazy val dockerCmd: String = {
+  lazy val dockerCmd: String = {
     /*
      * The docker host is set to a provided property 'docker.host' if it's
      * available; otherwise we check with WhiskProperties to see whether we are
@@ -116,10 +117,14 @@ object ActionContainer {
         .get("docker.host")
         .orElse(sys.env.get("DOCKER_HOST"))
         .orElse {
-          // Check if we are running on docker-machine env.
-          Option(WhiskProperties.getProperty("environment.type")).filter(_.toLowerCase.contains("docker-machine")).map {
-            case _ => s"tcp://${WhiskProperties.getMainDockerEndpoint}"
-          }
+          Try { // whisk.properties file may not exist
+            // Check if we are running on docker-machine env.
+            Option(WhiskProperties.getProperty("environment.type"))
+              .filter(_.toLowerCase.contains("docker-machine"))
+              .map {
+                case _ => s"tcp://${WhiskProperties.getMainDockerEndpoint}"
+              }
+          }.toOption.flatten
         }
         .map(" --host " + _)
         .getOrElse("")
@@ -224,18 +229,21 @@ object ActionContainer {
   }
 
   private def syncPost(host: String, port: Int, endPoint: String, content: JsValue)(
-    implicit logging: Logging): (Int, Option[JsObject]) = {
+    implicit logging: Logging,
+    as: ActorSystem): (Int, Option[JsObject]) = {
 
     implicit val transid = TransactionId.testing
 
-    whisk.core.containerpool.HttpUtils.post(host, port, endPoint, content)
+    whisk.core.containerpool.AkkaContainerClient.post(host, port, endPoint, content, 30.seconds)
   }
   private def concurrentSyncPost(host: String, port: Int, endPoint: String, contents: Seq[JsValue])(
     implicit logging: Logging,
-    ec: ExecutionContext): Seq[(Int, Option[JsObject])] = {
+    ec: ExecutionContext,
+    as: ActorSystem): Seq[(Int, Option[JsObject])] = {
 
     implicit val transid = TransactionId.testing
 
-    whisk.core.containerpool.HttpUtils.concurrentPost(host, port, endPoint, contents, 30.seconds)
+    whisk.core.containerpool.AkkaContainerClient.concurrentPost(host, port, endPoint, contents, 30.seconds)
   }
+
 }

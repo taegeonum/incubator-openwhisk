@@ -68,9 +68,13 @@ In all instructions, replace `<environment>` with your target environment. The d
 Docker for Mac. To use the default environment, you may omit the `-i` parameter entirely. For older Mac installation using Docker Machine,
 use `-i environments/docker-machine`.
 
-
-
 In all instructions, replace `<openwhisk_home>` with the base directory of your OpenWhisk source tree. e.g. `openwhisk`
+
+#### Preserving configuration and log directories on reboot
+When using the local Ansible environment, configuration and log data is stored in `/tmp` by default. However, operating
+system such as Linux and Mac clean the `/tmp` directory on reboot, resulting in failures when OpenWhisk tries to start
+up again. To avoid this problem, export the `OPENWHISK_TMP_DIR` variable assigning it the path to a persistent
+directory before deploying OpenWhisk.
 
 #### Setup
 
@@ -348,12 +352,10 @@ The default system throttling limits are configured in this file [./group_vars/a
 limits:
   invocationsPerMinute: "{{ limit_invocations_per_minute | default(60) }}"
   concurrentInvocations: "{{ limit_invocations_concurrent | default(30) }}"
-  concurrentInvocationsSystem:  "{{ limit_invocations_concurrent_system | default(5000) }}"
   firesPerMinute: "{{ limit_fires_per_minute | default(60) }}"
   sequenceMaxLength: "{{ limit_sequence_max_length | default(50) }}"
 ```
 - The `limits.invocationsPerMinute` represents the allowed namespace action invocations per minute.
 - The `limits.concurrentInvocations` represents the maximum concurrent invocations allowed per namespace.
-- The `limits.concurrentInvocationsSystem` represents the maximum concurrent invocations the system will allow across all namespaces.
 - The `limits.firesPerMinute` represents the allowed namespace trigger firings per minute.
 - The `limits.sequenceMaxLength` represents the maximum length of a sequence action.

@@ -57,15 +57,16 @@ case class EsQueryAggs(aggField: String, agg: EsAgg, field: String)
 case class EsQueryRange(key: String, range: EsRange, value: String)
 case class EsQueryBoolMatch(key: String, value: String)
 case class EsQueryOrder(field: String, kind: EsOrder)
-case class EsQuerySize(size: Integer)
 case class EsQueryAll() extends EsQueryMethod
-case class EsQueryMust(matches: Vector[EsQueryBoolMatch], range: Option[EsQueryRange] = None) extends EsQueryMethod
+case class EsQueryMust(matches: Vector[EsQueryBoolMatch], range: Vector[EsQueryRange] = Vector.empty)
+    extends EsQueryMethod
 case class EsQueryMatch(field: String, value: String, matchType: Option[EsMatch] = None) extends EsQueryMethod
 case class EsQueryTerm(key: String, value: String) extends EsQueryMethod
 case class EsQueryString(queryString: String) extends EsQueryMethod
 case class EsQuery(query: EsQueryMethod,
                    sort: Option[EsQueryOrder] = None,
-                   size: Option[EsQuerySize] = None,
+                   size: Option[Int] = None,
+                   from: Int = 0,
                    aggs: Option[EsQueryAggs] = None)
 
 // Schema of ES query results
@@ -108,7 +109,8 @@ object ElasticSearchJsonProtocol extends DefaultJsonProtocol {
   implicit object EsQueryMustJsonFormat extends RootJsonFormat[EsQueryMust] {
     def read(query: JsValue) = ???
     def write(query: EsQueryMust) = {
-      val boolQuery = Map("must" -> query.matches.toJson) ++ query.range.map(r => "filter" -> r.toJson)
+      val boolQuery = Map("must" -> query.matches.toJson) ++ Map("filter" -> query.range.toJson)
+        .filter(_._2 != JsArray.empty)
       JsObject("bool" -> boolQuery.toJson)
     }
   }
@@ -119,11 +121,6 @@ object ElasticSearchJsonProtocol extends DefaultJsonProtocol {
       JsArray(JsObject(query.field -> JsObject("order" -> query.kind.toString.toJson)))
   }
 
-  implicit object EsQuerySizeJsonFormat extends RootJsonFormat[EsQuerySize] {
-    def read(query: JsValue) = ???
-    def write(query: EsQuerySize) = JsNumber(query.size)
-  }
-
   implicit object EsQueryAggsJsonFormat extends RootJsonFormat[EsQueryAggs] {
     def read(query: JsValue) = ???
     def write(query: EsQueryAggs) =
@@ -132,7 +129,7 @@ object ElasticSearchJsonProtocol extends DefaultJsonProtocol {
 
   implicit object EsQueryAllJsonFormat extends RootJsonFormat[EsQueryAll] {
     def read(query: JsValue) = ???
-    def write(query: EsQueryAll) = JsObject("match_all" -> JsObject())
+    def write(query: EsQueryAll) = JsObject("match_all" -> JsObject.empty)
   }
 
   implicit object EsQueryMethod extends RootJsonFormat[EsQueryMethod] {
@@ -146,7 +143,7 @@ object ElasticSearchJsonProtocol extends DefaultJsonProtocol {
     }
   }
 
-  implicit val esQueryFormat = jsonFormat4(EsQuery.apply)
+  implicit val esQueryFormat = jsonFormat5(EsQuery.apply)
   implicit val esSearchHitFormat = jsonFormat(EsSearchHit.apply _, "_source")
   implicit val esSearchHitsFormat = jsonFormat2(EsSearchHits.apply)
   implicit val esSearchResultFormat = jsonFormat1(EsSearchResult.apply)

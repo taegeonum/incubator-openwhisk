@@ -31,7 +31,7 @@ case class ContainerArgsConfig(network: String,
                                dnsServers: Seq[String] = Seq.empty,
                                extraArgs: Map[String, Set[String]] = Map.empty)
 
-case class ContainerPoolConfig(numCore: Int, coreShare: Int) {
+case class ContainerPoolConfig(numCore: Int, coreShare: Int, akkaClient: Boolean) {
 
   /**
    * The total number of containers is simply the number of cores dilated by the cpu sharing.
@@ -75,7 +75,7 @@ object ContainerFactory {
 
   /** include the instance name, if specified and strip invalid chars before attempting to use them in the container name */
   def containerNamePrefix(instanceId: InvokerInstanceId): String =
-    s"wsk${instanceId.name.getOrElse("")}${instanceId.toInt}".filter(isAllowed)
+    s"wsk${instanceId.uniqueName.getOrElse("")}${instanceId.toInt}".filter(isAllowed)
 }
 
 /**
@@ -83,9 +83,9 @@ object ContainerFactory {
  * All impls should use the parameters specified as additional args to "docker run" commands
  */
 trait ContainerFactoryProvider extends Spi {
-  def getContainerFactory(actorSystem: ActorSystem,
-                          logging: Logging,
-                          config: WhiskConfig,
-                          instance: InvokerInstanceId,
-                          parameters: Map[String, Set[String]]): ContainerFactory
+  def instance(actorSystem: ActorSystem,
+               logging: Logging,
+               config: WhiskConfig,
+               instance: InvokerInstanceId,
+               parameters: Map[String, Set[String]]): ContainerFactory
 }

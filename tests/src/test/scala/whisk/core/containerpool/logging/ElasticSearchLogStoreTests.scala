@@ -54,7 +54,7 @@ class ElasticSearchLogStoreTests
 
   private val uuid = UUID()
   private val user =
-    Identity(Subject(), Namespace(EntityName("testSpace"), uuid), BasicAuthenticationAuthKey(uuid, Secret()), Set())
+    Identity(Subject(), Namespace(EntityName("testSpace"), uuid), BasicAuthenticationAuthKey(uuid, Secret()), Set.empty)
   private val activationId = ActivationId.generate()
 
   private val defaultLogSchema =
@@ -79,7 +79,8 @@ class ElasticSearchLogStoreTests
     "query" -> JsObject(
       "query_string" -> JsObject("query" -> JsString(
         s"_type: ${defaultConfig.logSchema.userLogs} AND ${defaultConfig.logSchema.activationId}: $activationId"))),
-    "sort" -> JsArray(JsObject(defaultConfig.logSchema.time -> JsObject("order" -> JsString("asc"))))).compactPrint
+    "sort" -> JsArray(JsObject(defaultConfig.logSchema.time -> JsObject("order" -> JsString("asc")))),
+    "from" -> JsNumber(0)).compactPrint
   private val defaultHttpRequest = HttpRequest(
     POST,
     Uri(s"/whisk_user_logs/_search"),

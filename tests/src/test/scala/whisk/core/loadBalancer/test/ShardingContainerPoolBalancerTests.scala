@@ -21,9 +21,10 @@ import common.StreamLogging
 import org.junit.runner.RunWith
 import org.scalatest.{FlatSpec, Matchers}
 import org.scalatest.junit.JUnitRunner
-import whisk.common.{ForcableSemaphore, TransactionId}
+import whisk.common.{ForcibleSemaphore, TransactionId}
 import whisk.core.entity.InvokerInstanceId
 import whisk.core.loadBalancer._
+import whisk.core.loadBalancer.InvokerState._
 
 /**
  * Unit tests for the ContainerPool object.
@@ -36,22 +37,25 @@ class ShardingContainerPoolBalancerTests extends FlatSpec with Matchers with Str
   behavior of "ShardingContainerPoolBalancerState"
 
   def healthy(i: Int) = new InvokerHealth(InvokerInstanceId(i), Healthy)
-  def unhealthy(i: Int) = new InvokerHealth(InvokerInstanceId(i), UnHealthy)
+  def unhealthy(i: Int) = new InvokerHealth(InvokerInstanceId(i), Unhealthy)
   def offline(i: Int) = new InvokerHealth(InvokerInstanceId(i), Offline)
 
-  def semaphores(count: Int, max: Int): IndexedSeq[ForcableSemaphore] =
-    IndexedSeq.fill(count)(new ForcableSemaphore(max))
+  def semaphores(count: Int, max: Int): IndexedSeq[ForcibleSemaphore] =
+    IndexedSeq.fill(count)(new ForcibleSemaphore(max))
+
+  def lbConfig(blackboxFraction: Double, invokerBusyThreshold: Int) =
+    ShardingContainerPoolBalancerConfig(blackboxFraction, invokerBusyThreshold, 1)
 
   it should "update invoker's state, growing the slots data and keeping valid old data" in {
     // start empty
     val slots = 10
-    val state = ShardingContainerPoolBalancerState()(ShardingContainerPoolBalancerConfig(0.5, slots))
+    val state = ShardingContainerPoolBalancerState()(lbConfig(0.5, slots))
     state.invokers shouldBe 'empty
     state.blackboxInvokers shouldBe 'empty
     state.managedInvokers shouldBe 'empty
     state.invokerSlots shouldBe 'empty
-    state.managedStepSizes shouldBe Seq()
-    state.blackboxStepSizes shouldBe Seq()
+    state.managedStepSizes shouldBe Seq.empty
+    state.blackboxStepSizes shouldBe Seq.empty
 
     // apply one update, verify everything is updated accordingly
     val update1 = IndexedSeq(healthy(0))
@@ -85,7 +89,7 @@ class ShardingContainerPoolBalancerTests extends FlatSpec with Matchers with Str
 
   it should "allow managed partition to overlap with blackbox for small N" in {
     Seq(0.1, 0.2, 0.3, 0.4, 0.5).foreach { bf =>
-      val state = ShardingContainerPoolBalancerState()(ShardingContainerPoolBalancerConfig(bf, 1))
+      val state = ShardingContainerPoolBalancerState()(lbConfig(bf, 1))
 
       (1 to 100).toSeq.foreach { i =>
         state.updateInvokers((1 to i).map(_ => healthy(1)))
@@ -112,7 +116,7 @@ class ShardingContainerPoolBalancerTests extends FlatSpec with Matchers with Str
 
   it should "update the cluster size, adjusting the invoker slots accordingly" in {
     val slots = 10
-    val state = ShardingContainerPoolBalancerState()(ShardingContainerPoolBalancerConfig(0.5, slots))
+    val state = ShardingContainerPoolBalancerState()(lbConfig(0.5, slots))
     state.updateInvokers(IndexedSeq(healthy(0)))
 
     state.invokerSlots.head.tryAcquire()
@@ -124,7 +128,7 @@ class ShardingContainerPoolBalancerTests extends FlatSpec with Matchers with Str
 
   it should "fallback to a size of 1 (alone) if cluster size is < 1" in {
     val slots = 10
-    val state = ShardingContainerPoolBalancerState()(ShardingContainerPoolBalancerConfig(0.5, slots))
+    val state = ShardingContainerPoolBalancerState()(lbConfig(0.5, slots))
     state.updateInvokers(IndexedSeq(healthy(0)))
 
     state.invokerSlots.head.availablePermits shouldBe slots
@@ -141,7 +145,7 @@ class ShardingContainerPoolBalancerTests extends FlatSpec with Matchers with Str
 
   it should "set the threshold to 1 if the cluster is bigger than there are slots on 1 invoker" in {
     val slots = 10
-    val state = ShardingContainerPoolBalancerState()(ShardingContainerPoolBalancerConfig(0.5, slots))
+    val state = ShardingContainerPoolBalancerState()(lbConfig(0.5, slots))
     state.updateInvokers(IndexedSeq(healthy(0)))
 
     state.invokerSlots.head.availablePermits shouldBe slots
@@ -209,8 +213,8 @@ class ShardingContainerPoolBalancerTests extends FlatSpec with Matchers with Str
   behavior of "pairwiseCoprimeNumbersUntil"
 
   it should "return an empty set for malformed inputs" in {
-    ShardingContainerPoolBalancer.pairwiseCoprimeNumbersUntil(0) shouldBe Seq()
-    ShardingContainerPoolBalancer.pairwiseCoprimeNumbersUntil(-1) shouldBe Seq()
+    ShardingContainerPoolBalancer.pairwiseCoprimeNumbersUntil(0) shouldBe Seq.empty
+    ShardingContainerPoolBalancer.pairwiseCoprimeNumbersUntil(-1) shouldBe Seq.empty
   }
 
   it should "return all coprime numbers until the number given" in {

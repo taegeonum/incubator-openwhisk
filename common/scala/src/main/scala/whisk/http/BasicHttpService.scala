@@ -108,7 +108,7 @@ trait BasicHttpService extends Directives {
     extract { req =>
       val tid =
         req.request.headers
-          .find(_.name == TransactionId.generatorConfig.header)
+          .find(_.is(TransactionId.generatorConfig.lowerCaseHeader))
           .map(_.value)
           .filterNot(_.startsWith(TransactionId.systemPrefix))
           .getOrElse {
@@ -188,7 +188,6 @@ object BasicHttpService {
     implicit val executionContext = actorSystem.dispatcher
     sys.addShutdownHook {
       Await.result(binding.map(_.unbind()), 30.seconds)
-      actorSystem.terminate()
       Await.result(actorSystem.whenTerminated, 30.seconds)
     }
   }

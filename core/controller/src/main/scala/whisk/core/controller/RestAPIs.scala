@@ -22,6 +22,7 @@ import akka.http.scaladsl.marshallers.sprayjson.SprayJsonSupport._
 import akka.http.scaladsl.model.StatusCodes._
 import akka.http.scaladsl.model.Uri
 import akka.http.scaladsl.model.headers._
+import akka.http.scaladsl.server.directives.AuthenticationDirective
 import akka.http.scaladsl.server.{Directives, Route}
 import akka.stream.ActorMaterializer
 import pureconfig.loadConfigOrThrow
@@ -29,7 +30,7 @@ import spray.json.DefaultJsonProtocol._
 import spray.json._
 import whisk.common.{Logging, TransactionId}
 import whisk.core.containerpool.logging.LogStore
-import whisk.core.database.CacheChangeNotification
+import whisk.core.database.{ActivationStore, CacheChangeNotification}
 import whisk.core.entitlement._
 import whisk.core.entity.ActivationId.ActivationIdGenerator
 import whisk.core.entity._
@@ -37,8 +38,9 @@ import whisk.core.entity.types._
 import whisk.core.loadBalancer.LoadBalancer
 import whisk.core.{ConfigKeys, WhiskConfig}
 import whisk.http.Messages
+import whisk.spi.{Spi, SpiLoader}
 
-import scala.concurrent.ExecutionContext
+import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Success, Try}
 
 /**
@@ -93,7 +95,7 @@ protected[controller] object RestApiCommons {
   implicit val emptyEntityToJsObject: FromEntityUnmarshaller[JsObject] = {
     Unmarshaller.byteStringUnmarshaller.forContentTypes(`application/json`).mapWithCharset { (data, charset) =>
       if (data.size == 0) {
-        JsObject()
+        JsObject.empty
       } else {
         val input = {
           if (charset == HttpCharsets.`UTF-8`) ParserInput(data.toArray)
@@ -168,12 +170,13 @@ class RestAPIVersion(config: WhiskConfig, apiPath: String, apiVersion: String)(
   implicit val logStore: LogStore,
   implicit val whiskConfig: WhiskConfig)
     extends SwaggerDocs(Uri.Path(apiPath) / apiVersion, "apiv1swagger.json")
-    with Authenticate
-    with AuthenticatedRoute
     with RespondWithHeaders {
   implicit val executionContext = actorSystem.dispatcher
   implicit val authStore = WhiskAuthStore.datastore()
   val whiskInfo = loadConfigOrThrow[WhiskInformation](ConfigKeys.buildInformation)
+
+  private implicit val authenticationDirectiveProvider =
+    SpiLoader.get[AuthenticationDirectiveProvider]
 
   def prefix = pathPrefix(apiPath / apiVersion)
 
@@ -194,33 +197,33 @@ class RestAPIVersion(config: WhiskConfig, apiPath: String, apiVersion: String)(
   def routes(implicit transid: TransactionId): Route = {
     prefix {
       sendCorsHeaders {
-        info ~ basicAuth(validateCredentials) { user =>
-          namespaces.routes(user) ~
-            pathPrefix(Collection.NAMESPACES) {
-              actions.routes(user) ~
-                triggers.routes(user) ~
-                rules.routes(user) ~
-                activations.routes(user) ~
-                packages.routes(user)
-            }
-        } ~ {
+        info ~
+          authenticationDirectiveProvider.authenticate(transid, authStore, logging) { user =>
+            namespaces.routes(user) ~
+              pathPrefix(Collection.NAMESPACES) {
+                actions.routes(user) ~
+                  triggers.routes(user) ~
+                  rules.routes(user) ~
+                  activations.routes(user) ~
+                  packages.routes(user)
+              }
+          } ~
           swaggerRoutes
-        }
       } ~ {
         // web actions are distinct to separate the cors header
         // and allow the actions themselves to respond to options
-        basicAuth(validateCredentials) { user =>
+        authenticationDirectiveProvider.authenticate(transid, authStore, logging) { user =>
           web.routes(user)
         } ~ {
           web.routes()
-        } ~ options {
-          sendCorsHeaders {
-            complete(OK)
+        } ~
+          options {
+            sendCorsHeaders {
+              complete(OK)
+            }
           }
-        }
       }
     }
-
   }
 
   private val namespaces = new NamespacesApi(apiPath, apiVersion)
@@ -314,4 +317,32 @@ class RestAPIVersion(config: WhiskConfig, apiPath: String, apiVersion: String)(
     override val whiskConfig: WhiskConfig)
       extends WhiskWebActionsApi
       with WhiskServices
+}
+
+trait AuthenticationDirectiveProvider extends Spi {
+
+  /**
+   * Returns an authentication directive used to validate the
+   * passed user credentials.
+   * At runtime the directive returns an user identity
+   * which is passed to the following routes.
+   *
+   * @return authentication directive used to verify the user credentials
+   */
+  def authenticate(implicit transid: TransactionId,
+                   authStore: AuthStore,
+                   logging: Logging): AuthenticationDirective[Identity]
+
+  /**
+   * Retrieves an Identity based on a given namespace name.
+   *
+   * For use-cases of anonymous invocation (i.e. WebActions),
+   * we need to an identity based on a given namespace-name to
+   * give the invocation all the context needed.
+   *
+   * @param namespace the namespace that the identity will be based on
+   * @return identity based on the given namespace
+   */
+  def identityByNamespace(namespace: EntityName)(implicit transid: TransactionId,
+                                                 authStore: AuthStore): Future[Identity]
 }

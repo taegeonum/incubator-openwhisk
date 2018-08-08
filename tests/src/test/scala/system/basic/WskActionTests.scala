@@ -19,27 +19,29 @@ package system.basic
 
 import org.junit.runner.RunWith
 import org.scalatest.junit.JUnitRunner
-import common.ActivationResult
-import common.JsHelpers
-import common.TestHelpers
-import common.TestUtils
-import common.WskOperations
-import common.WskProps
-import common.WskTestHelpers
+import common._
+import common.rest.WskRestOperations
 import spray.json._
 import spray.json.DefaultJsonProtocol._
 
 @RunWith(classOf[JUnitRunner])
-abstract class WskActionTests extends TestHelpers with WskTestHelpers with JsHelpers {
+class WskActionTests extends TestHelpers with WskTestHelpers with JsHelpers with WskActorSystem {
 
   implicit val wskprops = WskProps()
-  val wsk: WskOperations
+  val wsk: WskOperations = new WskRestOperations
 
   val testString = "this is a test"
   val testResult = JsObject("count" -> testString.split(" ").length.toJson)
   val guestNamespace = wskprops.namespace
 
   behavior of "Whisk actions"
+
+  it should "create an action with an empty file" in withAssetCleaner(wskprops) { (wp, assetHelper) =>
+    val name = "empty"
+    assetHelper.withCleaner(wsk.action, name) { (action, _) =>
+      action.create(name, Some(TestUtils.getTestActionFilename("empty.js")))
+    }
+  }
 
   it should "invoke an action returning a promise" in withAssetCleaner(wskprops) { (wp, assetHelper) =>
     val name = "hello promise"
@@ -180,8 +182,8 @@ abstract class WskActionTests extends TestHelpers with WskTestHelpers with JsHel
       val copiedAction = wsk.parseJsonString(wsk.action.get(copiedName).stdout)
 
       // CLI does not guarantee order of annotations and parameters so do a diff to compare the values
-      copiedAction.fields("parameters").convertTo[Seq[JsObject]] diff resParams shouldBe List()
-      copiedAction.fields("annotations").convertTo[Seq[JsObject]] diff resAnnots shouldBe List()
+      copiedAction.fields("parameters").convertTo[Seq[JsObject]] diff resParams shouldBe List.empty
+      copiedAction.fields("annotations").convertTo[Seq[JsObject]] diff resAnnots shouldBe List.empty
   }
 
   it should "recreate and invoke a new action with different code" in withAssetCleaner(wskprops) { (wp, assetHelper) =>
@@ -252,7 +254,7 @@ abstract class WskActionTests extends TestHelpers with WskTestHelpers with JsHel
     withClue(s"check failed for activation: $activation") {
       activation.response.status shouldBe "success"
       activation.response.result shouldBe Some(testResult)
-      activation.logs shouldBe Some(List())
+      activation.logs shouldBe Some(List.empty)
     }
   }
 
@@ -269,7 +271,7 @@ abstract class WskActionTests extends TestHelpers with WskTestHelpers with JsHel
     }
   }
 
-  ignore should "support UTF-8 as input and output format" in withAssetCleaner(wskprops) { (wp, assetHelper) =>
+  it should "support UTF-8 as input and output format" in withAssetCleaner(wskprops) { (wp, assetHelper) =>
     val name = "utf8Test"
     assetHelper.withCleaner(wsk.action, name) { (action, _) =>
       action.create(name, Some(TestUtils.getTestActionFilename("hello.js")))
@@ -279,7 +281,7 @@ abstract class WskActionTests extends TestHelpers with WskTestHelpers with JsHel
     val run = wsk.action.invoke(name, Map("payload" -> utf8.toJson))
     withActivation(wsk.activation, run) { activation =>
       activation.response.status shouldBe "success"
-      activation.logs.get.mkString(" ") should include(s"hello $utf8")
+      activation.logs.get.mkString(" ") should include(s"hello, $utf8")
     }
   }
 }

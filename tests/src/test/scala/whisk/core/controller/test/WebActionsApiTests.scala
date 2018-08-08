@@ -312,7 +312,7 @@ trait WebActionsApiBaseTests extends ControllerTestCommon with BeforeAndAfterEac
                   path: String = "",
                   body: Option[JsObject] = None,
                   pkgName: String = null,
-                  headers: List[HttpHeader] = List()) = {
+                  headers: List[HttpHeader] = List.empty) = {
     val packageActionParams = Option(pkgName)
       .filter(_ != null)
       .flatMap(n => packages.find(_.name == EntityName(n)))
@@ -323,7 +323,7 @@ trait WebActionsApiBaseTests extends ControllerTestCommon with BeforeAndAfterEac
       Some {
         JsObject(
           params.fields ++
-            body.map(_.fields).getOrElse(Map()) ++
+            body.map(_.fields).getOrElse(Map.empty) ++
             Context(webApiDirectives, HttpMethods.getForKey(method.toUpperCase).get, headers, path, Query.Empty)
               .metadata(identity))
       }
@@ -405,7 +405,7 @@ trait WebActionsApiBaseTests extends ControllerTestCommon with BeforeAndAfterEac
                 response shouldBe JsObject(
                   "pkg" -> s"$systemId/proxy".toJson,
                   "action" -> "export_auth".toJson,
-                  "content" -> metaPayload(m.method.name.toLowerCase, JsObject(), creds, pkgName = "proxy"))
+                  "content" -> metaPayload(m.method.name.toLowerCase, JsObject.empty, creds, pkgName = "proxy"))
                 response
                   .fields("content")
                   .asJsObject
@@ -430,7 +430,7 @@ trait WebActionsApiBaseTests extends ControllerTestCommon with BeforeAndAfterEac
                 "action" -> "export_auth".toJson,
                 "content" -> metaPayload(
                   m.method.name.toLowerCase,
-                  JsObject(),
+                  JsObject.empty,
                   creds,
                   pkgName = "proxy",
                   headers = List(RawHeader("X-Require-Whisk-Auth", requireAuthenticationKey))))
@@ -525,7 +525,7 @@ trait WebActionsApiBaseTests extends ControllerTestCommon with BeforeAndAfterEac
               "action" -> "export_c".toJson,
               "content" -> metaPayload(
                 m.method.name.toLowerCase,
-                JsObject(),
+                JsObject.empty,
                 creds,
                 body = Some(content),
                 path = p,
@@ -539,7 +539,7 @@ trait WebActionsApiBaseTests extends ControllerTestCommon with BeforeAndAfterEac
     it should s"invoke action which receives an empty entity (auth? ${creds.isDefined})" in {
       implicit val tid = transid()
 
-      Seq("", JsArray().compactPrint, JsObject().compactPrint, JsNull.compactPrint).foreach { arg =>
+      Seq("", JsArray.empty.compactPrint, JsObject.empty.compactPrint, JsNull.compactPrint).foreach { arg =>
         Seq(s"$systemId/proxy/export_c.json").foreach { path =>
           allowedMethodsWithEntity.foreach { m =>
             invocationsAllowed += 1
@@ -551,7 +551,7 @@ trait WebActionsApiBaseTests extends ControllerTestCommon with BeforeAndAfterEac
                 "action" -> "export_c".toJson,
                 "content" -> metaPayload(
                   m.method.name.toLowerCase,
-                  if (arg.nonEmpty && arg != "{}") JsObject(webApiDirectives.body -> arg.parseJson) else JsObject(),
+                  if (arg.nonEmpty && arg != "{}") JsObject(webApiDirectives.body -> arg.parseJson) else JsObject.empty,
                   creds,
                   pkgName = "proxy",
                   headers = List(`Content-Type`(ContentTypes.`application/json`))))
@@ -600,7 +600,7 @@ trait WebActionsApiBaseTests extends ControllerTestCommon with BeforeAndAfterEac
             response shouldBe JsObject(
               "pkg" -> s"$systemId".toJson,
               "action" -> "export_c".toJson,
-              "content" -> metaPayload(m.method.name.toLowerCase, JsObject(), creds))
+              "content" -> metaPayload(m.method.name.toLowerCase, JsObject.empty, creds))
           }
         }
       }
@@ -618,7 +618,7 @@ trait WebActionsApiBaseTests extends ControllerTestCommon with BeforeAndAfterEac
             val response = responseAs[JsObject]
             response shouldBe metaPayload(
               m.method.name.toLowerCase,
-              JsObject(),
+              JsObject.empty,
               creds,
               path = "/content",
               pkgName = "proxy")
@@ -792,7 +792,7 @@ trait WebActionsApiBaseTests extends ControllerTestCommon with BeforeAndAfterEac
       }
 
       Seq(s"$systemId/proxy/export_c.http").foreach { path =>
-        Set(JsObject(), JsObject("body" -> "".toJson), JsObject("body" -> JsNull)).foreach { bodyResult =>
+        Set(JsObject.empty, JsObject("body" -> "".toJson), JsObject("body" -> JsNull)).foreach { bodyResult =>
           allowedMethods.foreach { m =>
             invocationsAllowed += 2
             actionResult = Some(bodyResult)
@@ -1036,7 +1036,7 @@ trait WebActionsApiBaseTests extends ControllerTestCommon with BeforeAndAfterEac
 
       Seq(
         (JsObject("content-type" -> "application/json".toJson), OK),
-        (JsObject(), OK),
+        (JsObject.empty, OK),
         (JsObject("content-type" -> "text/html".toJson), BadRequest)).foreach {
         case (headers, expectedCode) =>
           Seq(s"$systemId/proxy/export_c.http").foreach { path =>
@@ -1455,7 +1455,7 @@ trait WebActionsApiBaseTests extends ControllerTestCommon with BeforeAndAfterEac
             pkgName = "proxy"))
       }
 
-      Post(s"$testRoutePath/$systemId/proxy/export_c.json?a=b&c=d", JsObject()) ~> Route.seal(routes(creds)) ~> check {
+      Post(s"$testRoutePath/$systemId/proxy/export_c.json?a=b&c=d", JsObject.empty) ~> Route.seal(routes(creds)) ~> check {
         status should be(OK)
         val response = responseAs[JsObject]
         response shouldBe JsObject(
@@ -1768,15 +1768,15 @@ trait WebActionsApiBaseTests extends ControllerTestCommon with BeforeAndAfterEac
       }
     }
 
-    protected[core] override def grant(subject: Subject, right: Privilege, resource: Resource)(
+    protected[core] override def grant(user: Identity, right: Privilege, resource: Resource)(
       implicit transid: TransactionId) = ???
 
     /** Revokes subject right to resource by removing them from the entitlement matrix. */
-    protected[core] override def revoke(subject: Subject, right: Privilege, resource: Resource)(
+    protected[core] override def revoke(user: Identity, right: Privilege, resource: Resource)(
       implicit transid: TransactionId) = ???
 
     /** Checks if subject has explicit grant for a resource. */
-    protected override def entitled(subject: Subject, right: Privilege, resource: Resource)(
+    protected override def entitled(user: Identity, right: Privilege, resource: Resource)(
       implicit transid: TransactionId) = ???
   }
 
