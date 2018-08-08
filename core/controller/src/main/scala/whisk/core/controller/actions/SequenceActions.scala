@@ -309,6 +309,7 @@ protected[actions] trait SequenceActions {
       val inputPayload = accounting.previousResponse.getAndSet(null).result.map(_.asJsObject)
 
       // invoke the action by calling the right method depending on whether it's an atomic action or a sequence
+      // TG: It could be sequence or action
       val futureWhiskActivationTuple = action.toExecutableWhiskAction match {
         case None =>
           val SequenceExecMetaData(components) = action.exec
@@ -327,6 +328,7 @@ protected[actions] trait SequenceActions {
           // this is an invoke for an atomic action
           logging.debug(this, s"sequence invoking an enclosed atomic action $action")
           val timeout = action.limits.timeout.duration + 1.minute
+          // TG: it returns the response of the action
           invokeAction(user, action, inputPayload, waitForResponse = Some(timeout), cause) map {
             case res => (res, accounting.atomicActionCnt + 1)
           }
@@ -334,6 +336,7 @@ protected[actions] trait SequenceActions {
 
       futureWhiskActivationTuple
         .map {
+          // TG: it returns success or fail
           case (Right(activation), atomicActionCountSoFar) =>
             accounting.maybe(activation, atomicActionCountSoFar, actionSequenceLimit)
 
